@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import joblib
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Load the pre-trained XGBoost model using joblib
 model = joblib.load('xgb_model_colab.pkl')
@@ -13,20 +16,33 @@ features = ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 'Insulin
             'NewGlucose_Overweight', 'NewGlucose_Secret']
 
 # Create the input form
-st.title("Diabetes Prediction App")
+st.title("Diabetes Risk Prediction App")
 
-
-# Create input fields for each feature with dummy values
-inputs = {}
-for feature in ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age']:
-    if feature in ['Pregnancies', 'Age']:
-        inputs[feature] = st.number_input(f"{feature}", min_value=0.0, step=1.0)
-    else:
-        inputs[feature] = st.number_input(f"{feature}", min_value=0.0, step=0.1)
+# Use sidebar for input fields to keep the main page clean
+with st.sidebar:
+    st.header("Enter Your Information")
+    pregnancies = st.number_input("Number of Pregnancies", min_value=0, step=1)
+    glucose = st.number_input("Glucose Level (mg/dL)", min_value=0.0, step=0.1)
+    blood_pressure = st.number_input("Blood Pressure (mmHg)", min_value=0.0, step=0.1)
+    skin_thickness = st.number_input("Skin Thickness (mm)", min_value=0.0, step=0.1)
+    insulin = st.number_input("Insulin (mu U/ml)", min_value=0.0, step=0.1)
+    bmi = st.number_input("BMI (kg/m^2)", min_value=0.0, step=0.1)
+    pedigree_function = st.number_input("Diabetes Pedigree Function", min_value=0.0, step=0.1)
+    age = st.number_input("Age (years)", min_value=0, step=1)
 
 # Create a button to trigger prediction
-if st.button("Predict"):
+if st.button("Predict Diabetes Risk"):
     # Create a DataFrame from the input values
+    inputs = {
+        'Pregnancies': pregnancies,
+        'Glucose': glucose,
+        'BloodPressure': blood_pressure,
+        'SkinThickness': skin_thickness,
+        'Insulin': insulin,
+        'BMI': bmi,
+        'DiabetesPedigreeFunction': pedigree_function,
+        'Age': age
+    }
     input_df = pd.DataFrame([inputs])
 
     # Initialize new features with default values
@@ -42,52 +58,108 @@ if st.button("Predict"):
     input_df['NewGlucose_Secret'] = 0
 
     # Apply BMI categorization
-    if input_df['BMI'].values[0] < 18.5:
+    if input_df['BMI'].values < 18.5:
         input_df['NewBMI_Underweight'] = 1
-    elif 18.5 <= input_df['BMI'].values[0] <= 24.9:
+    elif 18.5 <= input_df['BMI'].values <= 24.9:
         input_df['NewBMI_Obesity 1'] = 1  # Assuming normal weight categorization
-    elif 24.9 < input_df['BMI'].values[0] <= 29.9:
+    elif 24.9 < input_df['BMI'].values <= 29.9:
         input_df['NewBMI_Overweight'] = 1
-    elif 29.9 < input_df['BMI'].values[0] <= 34.9:
+    elif 29.9 < input_df['BMI'].values <= 34.9:
         input_df['NewBMI_Obesity 1'] = 1
-    elif 34.9 < input_df['BMI'].values[0] <= 39.9:
+    elif 34.9 < input_df['BMI'].values <= 39.9:
         input_df['NewBMI_Obesity 2'] = 1
     else:
         input_df['NewBMI_Obesity 3'] = 1
 
     # Apply Insulin categorization
-    if 16 <= input_df['Insulin'].values[0] <= 166:
+    if 16 <= input_df['Insulin'].values <= 166:
         input_df['NewInsulinScore_Normal'] = 1
 
     # Apply Glucose categorization
-    if input_df['Glucose'].values[0] <= 70:
+    if input_df['Glucose'].values <= 70:
         input_df['NewGlucose_Low'] = 1
-    elif 70 < input_df['Glucose'].values[0] <= 99:
+    elif 70 < input_df['Glucose'].values <= 99:
         input_df['NewGlucose_Normal'] = 1
-    elif 99 < input_df['Glucose'].values[0] <= 126:
+    elif 99 < input_df['Glucose'].values <= 126:
         input_df['NewGlucose_Overweight'] = 1
     else:
         input_df['NewGlucose_Secret'] = 1
 
-    # Log input DataFrame for debugging
-    st.write("Input DataFrame for prediction:")
-    st.dataframe(input_df)
-
     # Make the prediction
-    prediction = model.predict(input_df[features])[0]
-
-    # Log the raw prediction value
-    st.write(f"Raw prediction output: {prediction}")
+    prediction = model.predict(input_df[features])
+    prediction_proba = model.predict_proba(input_df[features])
 
     # Display the prediction result
     if prediction == 1:
-        st.error("The prediction indicates a high risk of diabetes.")
+        st.error("The prediction indicates the patient has a high risk of diabetes.")
+        st.write(f"Probability of having diabetes: {prediction_proba[0][1]:.2%}")
         st.write("**Recommendations:**")
         st.write("- Consider consulting with a healthcare provider.")
         st.write("- Maintain a balanced diet low in sugars and refined carbs.")
         st.write("- Increase physical activity to at least 150 minutes per week.")
         st.write("- Monitor your blood sugar levels regularly.")
     else:
-        st.success("The prediction indicates a low risk of diabetes.")
-        st.write("**Keep up the good work!** Continue to maintain a healthy lifestyle.")
+        st.success("The prediction indicates the patient has a low risk of diabetes.")
+        st.write(f"Probability of not having diabetes: {prediction_proba[0][0]:.2%}")
+        st.write("**Keep up the good work** Continue to maintain a healthy lifestyle.")
 
+    # Data Analysis Section
+    st.header("Data Analysis")
+
+    # 1. Feature Importance
+    feature_importance = model.feature_importances_
+    feature_importance_df = pd.DataFrame({'feature': features, 'importance': feature_importance})
+    feature_importance_df = feature_importance_df.sort_values('importance', ascending=False)
+
+    st.subheader("Feature Importance")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x='importance', y='feature', data=feature_importance_df.head(10), ax=ax)
+    ax.set_title("Top 10 Most Important Features")
+    st.pyplot(fig)
+
+    # 2. User's Data vs. Average
+    # Assuming we have average values for each feature (you'd need to calculate these from your training data)
+    average_values = {
+        'Pregnancies': 3.8,
+        'Glucose': 120.9,
+        'BloodPressure': 69.1,
+        'SkinThickness': 20.5,
+        'Insulin': 79.8,
+        'BMI': 32.0,
+        'DiabetesPedigreeFunction': 0.47,
+        'Age': 33.2
+    }
+
+    st.subheader("Your Data vs. Average")
+    comparison_df = pd.DataFrame({
+        'Feature': average_values.keys(),
+        'Your Value': [inputs[key] for key in average_values.keys()],
+        'Average Value': average_values.values()
+    })
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    comparison_df.plot(x='Feature', y=['Your Value', 'Average Value'], kind='bar', ax=ax)
+    plt.title("Your Data vs. Average")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+    # 3. Risk Factors Analysis
+    st.subheader("Risk Factors Analysis")
+    risk_factors = []
+    if inputs['BMI'] > 25:
+        risk_factors.append("High BMI")
+    if inputs['Glucose'] > 100:
+        risk_factors.append("High Glucose")
+    if inputs['BloodPressure'] > 130:
+        risk_factors.append("High Blood Pressure")
+    if inputs['Age'] > 40:
+        risk_factors.append("Age")
+    
+    if risk_factors:
+        st.write("Based on your input, the following factors may contribute to increased diabetes risk:")
+        for factor in risk_factors:
+            st.write(f"- {factor}")
+    else:
+        st.write("No significant risk factors identified based on the provided information.")
+
+st.write("**Please note:** This app is for informational purposes only. Consult a healthcare professional for personalized advice.")
